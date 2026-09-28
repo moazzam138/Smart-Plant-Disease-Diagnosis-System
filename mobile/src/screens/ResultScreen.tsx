@@ -1,5 +1,7 @@
-import React from "react";
+import React, { useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   View,
   Text,
   StyleSheet,
@@ -9,43 +11,73 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../navigation/types";
+import { savePrediction } from "../services/historyService";
 
-export default function ResultScreen() {
-  const navigation = useNavigation<any>();
-  const route = useRoute<any>();
+type Props = NativeStackScreenProps<RootStackParamList, "Result">;
+
+export default function ResultScreen({ navigation, route }: Props) {
+  const savingRef = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
 
   const {
     imageUri,
     disease = "Early Blight",
     confidence = 93,
     severity = "Moderate",
+    model = "Mock Model",
+    source = "mock",
   } = route.params || {};
 
   // ================================
   // SAVE RESULT TO HISTORY
   // ================================
-  const saveToHistory = () => {
-    navigation.navigate("MainTabs", {
-      screen: "History",
-      params: {
-        newResult: {
-          imageUri,
-          disease,
-          confidence,
-          severity,
-          date: new Date().toLocaleDateString(),
-        },
-      },
-    });
+  const openHistory = () => {
+    navigation.navigate("MainTabs", { screen: "History" });
+  };
+
+  const saveToHistory = async () => {
+    if (savingRef.current || isSaved) return;
+
+    savingRef.current = true;
+    setIsSaving(true);
+    try {
+      await savePrediction({
+        imageUri: imageUri ?? null,
+        disease,
+        confidence,
+        severity,
+        model,
+        source,
+      });
+      setIsSaved(true);
+      Alert.alert("Saved to History", "This scan is saved on your device.", [
+        { text: "View History", onPress: openHistory },
+        { text: "Stay here", style: "cancel" },
+      ]);
+    } catch (error) {
+      Alert.alert(
+        "Could not save scan",
+        error instanceof Error
+          ? error.message
+          : "Please try saving this scan again.",
+      );
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
+    }
   };
 
   // ================================
   // VIEW TREATMENT
   // ================================
   const viewTreatment = () => {
-    navigation.navigate("MainTabs", {
-      screen: "Insights",
+    navigation.navigate("Treatment", {
+      disease,
+      severity,
+      confidence,
     });
   };
 
@@ -147,6 +179,19 @@ export default function ResultScreen() {
             </View>
           </View>
 
+          <View style={styles.predictionSource}>
+            <Ionicons
+              name={source === "mock" ? "flask-outline" : "cloud-done-outline"}
+              size={17}
+              color={source === "mock" ? "#F3B94D" : "#19D98A"}
+            />
+            <Text style={styles.predictionSourceText}>
+              {source === "mock"
+                ? `Demo/sample prediction (${model}) — not an AI diagnosis.`
+                : `Prediction source: ${model}`}
+            </Text>
+          </View>
+
           {/* ================================
               TREATMENT BUTTON
           ================================= */}
@@ -166,10 +211,23 @@ export default function ResultScreen() {
           <TouchableOpacity
             style={styles.saveButton}
             onPress={saveToHistory}
+            disabled={isSaving || isSaved}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isSaving || isSaved, busy: isSaving }}
           >
-            <Ionicons name="bookmark-outline" size={20} color="#19D98A" />
-            <Text style={styles.saveText}>Save to History</Text>
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#19D98A" />
+            ) : (
+              <Ionicons
+                name={isSaved ? "checkmark-circle-outline" : "bookmark-outline"}
+                size={20}
+                color="#19D98A"
+              />
+            )}
+            <Text style={styles.saveText}>
+              {isSaved ? "Saved to History" : "Save to History"}
+            </Text>
           </TouchableOpacity>
 
           {/* ================================
@@ -366,6 +424,23 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 6,
     marginLeft: 10,
+  },
+
+  predictionSource: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "#101C18",
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+
+  predictionSourceText: {
+    flex: 1,
+    color: "#9BAFA7",
+    fontSize: 11,
+    lineHeight: 16,
+    marginLeft: 8,
   },
 
   // ================================

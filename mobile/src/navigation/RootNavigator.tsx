@@ -6,8 +6,10 @@ import BottomTabNavigator from "./BottomTabNavigator";
 import PreviewScreen from "../screens/PreviewScreen";
 import AnalysisScreen from "../screens/AnalysisScreen";
 import ResultScreen from "../screens/ResultScreen";
+import TreatmentScreen from "../screens/TreatmentScreen";
+import type { RootStackParamList } from "./types";
 
-const Stack = createNativeStackNavigator();
+const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
   return (
@@ -33,6 +35,11 @@ export default function RootNavigator() {
       <Stack.Screen
         name="Result"
         component={ResultScreen}
+      />
+
+      <Stack.Screen
+        name="Treatment"
+        component={TreatmentScreen}
       />
 
     </Stack.Navigator>

@@ -1,10 +1,13 @@
 export const colors = {
   primary: "#19C784",
+  onPrimary: "#04110C",
 
   background: "#08100F",
   surface: "#101918",
   card: "#14201E",
   input: "#17211F",
+  border: "#1D302A",
+  borderStrong: "#245844",
 
   white: "#FFFFFF",
 

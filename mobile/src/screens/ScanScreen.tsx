@@ -14,11 +14,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+import type { SelectedImage } from "../types/prediction";
 
 export default function ScanScreen() {
   const navigation = useNavigation<any>();
 
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
 
   // ================================
   // OPEN CAMERA
@@ -44,7 +45,12 @@ export default function ScanScreen() {
       });
 
       if (!result.canceled && result.assets.length > 0) {
-        setSelectedImage(result.assets[0].uri);
+        const asset = result.assets[0];
+        setSelectedImage({
+          uri: asset.uri,
+          fileName: asset.fileName,
+          mimeType: asset.mimeType,
+        });
       }
     } catch (error) {
       console.error("Camera Error:", error);
@@ -81,7 +87,12 @@ export default function ScanScreen() {
         });
 
       if (!result.canceled && result.assets.length > 0) {
-        setSelectedImage(result.assets[0].uri);
+        const asset = result.assets[0];
+        setSelectedImage({
+          uri: asset.uri,
+          fileName: asset.fileName,
+          mimeType: asset.mimeType,
+        });
       }
     } catch (error) {
       console.error("Gallery Error:", error);
@@ -113,7 +124,9 @@ export default function ScanScreen() {
     }
 
     navigation.navigate("Preview", {
-      imageUri: selectedImage,
+      imageUri: selectedImage.uri,
+      fileName: selectedImage.fileName,
+      mimeType: selectedImage.mimeType,
     });
   };
 
@@ -148,7 +161,7 @@ export default function ScanScreen() {
             {selectedImage ? (
               <>
                 <Image
-                  source={{ uri: selectedImage }}
+                  source={{ uri: selectedImage.uri }}
                   style={styles.previewImage}
                   resizeMode="cover"
                 />

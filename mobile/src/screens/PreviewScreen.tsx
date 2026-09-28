@@ -1,27 +1,55 @@
 import React from "react";
 import {
+  ActivityIndicator,
+  Alert,
   View,
   Text,
   StyleSheet,
   Image,
   TouchableOpacity,
 } from "react-native";
+import { useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
-export default function PreviewScreen() {
-  const navigation = useNavigation<any>();
-  const route = useRoute<any>();
+import { analyzeImage } from "../services/predictionService";
+import type { RootStackParamList } from "../navigation/types";
 
-  const { imageUri } = route.params || {};
+type Props = NativeStackScreenProps<RootStackParamList, "Preview">;
 
-  const analyzeImage = () => {
-    if (!imageUri) return;
+export default function PreviewScreen({ navigation, route }: Props) {
+  const { imageUri, fileName, mimeType } = route.params;
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-    navigation.navigate("Analysis", {
-      imageUri,
-    });
+  const handleAnalyzeImage = async () => {
+    if (isAnalyzing) return;
+    if (!imageUri) {
+      Alert.alert("Photo needed", "Please go back and capture or select a leaf photo first.");
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const prediction = await analyzeImage({ uri: imageUri, fileName, mimeType });
+      navigation.replace("Result", {
+        imageUri,
+        disease: prediction.disease,
+        confidence: prediction.confidence,
+        severity: prediction.severity,
+        model: prediction.model,
+        source: prediction.source,
+      });
+    } catch (error) {
+      Alert.alert(
+        "Analysis unavailable",
+        error instanceof Error
+          ? error.message
+          : "We could not analyze this photo. Please try again.",
+      );
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   return (
@@ -74,26 +102,26 @@ export default function PreviewScreen() {
           </Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.analyzeButton}
-          onPress={analyzeImage}
+          <TouchableOpacity
+            style={[styles.analyzeButton, isAnalyzing && styles.analyzeButtonDisabled]}
+            onPress={handleAnalyzeImage}
+            disabled={isAnalyzing}
           activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isAnalyzing, busy: isAnalyzing }}
         >
-          <Ionicons
-            name="sparkles-outline"
-            size={22}
-            color="#07100E"
-          />
-
-          <Text style={styles.analyzeText}>
-            Analyze Leaf
-          </Text>
-
-          <Ionicons
-            name="arrow-forward"
-            size={21}
-            color="#07100E"
-          />
+            {isAnalyzing ? (
+              <>
+                <ActivityIndicator color="#07100E" />
+                <Text style={styles.analyzeText}>Analyzing...</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="sparkles-outline" size={22} color="#07100E" />
+                <Text style={styles.analyzeText}>Analyze Leaf</Text>
+                <Ionicons name="arrow-forward" size={21} color="#07100E" />
+              </>
+            )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -182,6 +210,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 18,
     marginTop: 20,
+  },
+
+  analyzeButtonDisabled: {
+    opacity: 0.75,
   },
 
   analyzeText: {

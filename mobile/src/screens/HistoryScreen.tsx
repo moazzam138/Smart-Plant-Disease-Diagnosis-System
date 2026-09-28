@@ -2,17 +2,23 @@
 /* IMPORTS */
 /* ============================================================= */
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   View,
   Text,
   StyleSheet,
   SectionList,
   Pressable,
   Animated,
+  TouchableOpacity,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
+import { deletePrediction, getPredictions } from "../services/historyService";
+import type { DiseaseSeverity, SavedPrediction } from "../types/prediction";
 
 /* ============================================================= */
 /* DESIGN TOKENS — shared with HomeScreen for a consistent system */
@@ -61,7 +67,7 @@ const TONES: Record<Tone, { fg: string; bg: string }> = {
 /* DATA */
 /* ============================================================= */
 
-type Severity = "None" | "Mild" | "Moderate" | "Severe";
+type Severity = "None" | DiseaseSeverity;
 
 type HistoryEntry = {
   id: string;
@@ -73,61 +79,40 @@ type HistoryEntry = {
   imageUri: string | null;
 };
 
-const mockHistory: HistoryEntry[] = [
-  {
-    id: "1",
-    disease: "Early Blight",
-    confidence: 93,
-    severity: "Moderate",
-    date: "26/09/2026",
-    dateLabel: "Today",
-    imageUri: null,
-  },
-  {
-    id: "2",
-    disease: "Healthy",
-    confidence: 96,
-    severity: "None",
-    date: "25/09/2026",
-    dateLabel: "Yesterday",
-    imageUri: null,
-  },
-  {
-    id: "3",
-    disease: "Leaf Curl Virus",
-    confidence: 88,
-    severity: "Mild",
-    date: "23/09/2026",
-    dateLabel: "23 Sep",
-    imageUri: null,
-  },
-  {
-    id: "4",
-    disease: "Late Blight",
-    confidence: 97,
-    severity: "Severe",
-    date: "20/09/2026",
-    dateLabel: "20 Sep",
-    imageUri: null,
-  },
-  {
-    id: "5",
-    disease: "Healthy",
-    confidence: 91,
-    severity: "None",
-    date: "17/09/2026",
-    dateLabel: "17 Sep",
-    imageUri: null,
-  },
-];
-
 /** Maps a diagnosis severity to the tone used for its badge, icon and bar. */
 const SEVERITY_TONE: Record<Severity, Tone> = {
   None: "positive",
   Mild: "positive",
   Moderate: "warning",
   Severe: "danger",
+  Unknown: "warning",
 };
+
+function toHistoryEntry(record: SavedPrediction): HistoryEntry {
+  const created = new Date(record.createdAt);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  const sameDay = (left: Date, right: Date) =>
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate();
+  const dateLabel = sameDay(created, today)
+    ? "Today"
+    : sameDay(created, yesterday)
+      ? "Yesterday"
+      : created.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+
+  return {
+    id: record.id,
+    disease: record.disease,
+    confidence: record.confidence,
+    severity: record.severity,
+    date: created.toLocaleDateString("en-GB"),
+    dateLabel,
+    imageUri: record.imageUri,
+  };
+}
 
 type FilterKey = "all" | "healthy" | "disease";
 
@@ -332,13 +317,15 @@ function DateSectionHeader({ label }: { label: string }) {
 function HistoryCard({
   item,
   isLatest,
+  onDelete,
 }: {
   item: HistoryEntry;
   isLatest: boolean;
+  onDelete: () => void;
 }) {
   const tone = SEVERITY_TONE[item.severity];
   const toneColors = TONES[tone];
-  const isHealthy = item.severity === "None";
+  const isHealthy = item.severity === "None" || item.disease.trim().toLowerCase() === "healthy";
 
   return (
     <ScalePressable style={styles.card} accessibilityLabel={item.disease}>
@@ -357,7 +344,14 @@ function HistoryCard({
             {item.disease}
           </Text>
 
-          <Ionicons name="chevron-forward" size={16} color={COLORS.faint} />
+          <TouchableOpacity
+            onPress={onDelete}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${item.disease} scan`}
+          >
+            <Ionicons name="trash-outline" size={16} color={COLORS.faint} />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.dateRow}>
@@ -423,6 +417,28 @@ function EmptyState({ filter }: { filter: FilterKey }) {
   );
 }
 
+function HistoryLoading() {
+  return (
+    <View style={styles.loadState}>
+      <ActivityIndicator color={COLORS.primary} />
+      <Text style={styles.loadText}>Loading saved scans...</Text>
+    </View>
+  );
+}
+
+function HistoryLoadError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <View style={styles.loadState}>
+      <Ionicons name="cloud-offline-outline" size={25} color={COLORS.warning} />
+      <Text style={styles.emptyTitle}>History could not be loaded</Text>
+      <Text style={styles.loadText}>Check device storage and try again.</Text>
+      <TouchableOpacity onPress={onRetry} style={styles.retryButton}>
+        <Text style={styles.retryText}>Try again</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 /* ============================================================= */
 /* SCREEN */
 /* ============================================================= */
@@ -430,14 +446,60 @@ function EmptyState({ filter }: { filter: FilterKey }) {
 type Section = { title: string; data: HistoryEntry[] };
 
 export default function HistoryScreen() {
-  const [history] = useState<HistoryEntry[]>(mockHistory);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+
+  const loadHistory = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const records = await getPredictions();
+      setHistory(records.map(toHistoryEntry));
+      setLoadError(false);
+    } catch {
+      setLoadError(true);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadHistory();
+    }, [loadHistory]),
+  );
+
+  const confirmDelete = (entry: HistoryEntry) => {
+    Alert.alert(
+      "Delete scan?",
+      `Remove the ${entry.disease} record from this device?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deletePrediction(entry.id);
+              setHistory((current) => current.filter((item) => item.id !== entry.id));
+            } catch (error) {
+              Alert.alert(
+                "Could not delete scan",
+                error instanceof Error ? error.message : "Please try again.",
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const counts = useMemo<Record<FilterKey, number>>(
     () => ({
       all: history.length,
-      healthy: history.filter((h) => h.severity === "None").length,
-      disease: history.filter((h) => h.severity !== "None").length,
+      healthy: history.filter((h) => h.severity === "None" || h.disease.trim().toLowerCase() === "healthy").length,
+      disease: history.filter((h) => h.severity !== "None" && h.disease.trim().toLowerCase() !== "healthy").length,
     }),
     [history]
   );
@@ -445,9 +507,9 @@ export default function HistoryScreen() {
   const filtered = useMemo(() => {
     if (filter === "all") return history;
     if (filter === "healthy") {
-      return history.filter((h) => h.severity === "None");
+      return history.filter((h) => h.severity === "None" || h.disease.trim().toLowerCase() === "healthy");
     }
-    return history.filter((h) => h.severity !== "None");
+    return history.filter((h) => h.severity !== "None" && h.disease.trim().toLowerCase() !== "healthy");
   }, [history, filter]);
 
   // Group entries by their relative date label, preserving newest-first order.
@@ -478,6 +540,11 @@ export default function HistoryScreen() {
         stickySectionHeadersEnabled={false}
         ListHeaderComponent={
           <>
+            {loadError && history.length > 0 ? (
+              <TouchableOpacity onPress={() => void loadHistory()} style={styles.errorBanner}>
+                <Text style={styles.errorBannerText}>Couldn’t refresh saved scans. Tap to retry.</Text>
+              </TouchableOpacity>
+            ) : null}
             <Header total={history.length} />
             <SummaryStrip
               total={counts.all}
@@ -487,12 +554,18 @@ export default function HistoryScreen() {
             <FilterChips active={filter} onChange={setFilter} counts={counts} />
           </>
         }
-        ListEmptyComponent={<EmptyState filter={filter} />}
+        ListEmptyComponent={
+          isLoading ? <HistoryLoading /> : loadError ? <HistoryLoadError onRetry={() => void loadHistory()} /> : <EmptyState filter={filter} />
+        }
         renderSectionHeader={({ section }) => (
           <DateSectionHeader label={section.title} />
         )}
         renderItem={({ item }) => (
-          <HistoryCard item={item} isLatest={item.id === latestId} />
+          <HistoryCard
+            item={item}
+            isLatest={item.id === latestId}
+            onDelete={() => confirmDelete(item)}
+          />
         )}
         ItemSeparatorComponent={() => <View style={{ height: SPACING.md }} />}
         SectionSeparatorComponent={() => <View style={{ height: SPACING.xs }} />}
@@ -832,6 +905,49 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     fontSize: 12,
     lineHeight: 18,
+    textAlign: "center",
+  },
+
+  loadState: {
+    alignItems: "center",
+    paddingTop: SPACING.xxl * 2,
+    paddingHorizontal: SPACING.xl,
+  },
+
+  loadText: {
+    color: COLORS.muted,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
+    marginTop: SPACING.sm,
+  },
+
+  retryButton: {
+    backgroundColor: COLORS.primaryDark,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    marginTop: SPACING.md,
+  },
+
+  retryText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  errorBanner: {
+    backgroundColor: "#332814",
+    borderRadius: RADIUS.sm,
+    padding: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+
+  errorBannerText: {
+    color: COLORS.warning,
+    fontSize: 11,
     textAlign: "center",
   },
 });
