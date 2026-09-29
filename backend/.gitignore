@@ -1,0 +1,19 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+
+# Model binaries are shared outside git (see README "Get the model files")
+models/*.tflite
+models/*.keras
+models/*.h5
+models/class_names.json
+
+# Evidence produced locally
+reports/*
+!reports/.gitkeep
+
+# Local sanity-check images (keep dataset images out of git)
+sanity_images/
