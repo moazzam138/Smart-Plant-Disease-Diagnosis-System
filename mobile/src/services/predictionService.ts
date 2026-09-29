@@ -111,18 +111,45 @@ function createMockPrediction(): PredictionResult {
   };
 }
 
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+type UploadOutcome =
+  | { kind: "response"; status: number; body: string }
+  | { kind: "network"; message: string }
+  | { kind: "timeout" };
+
+/**
+ * Sends multipart form data with React Native's XMLHttpRequest.
+ *
+ * Why not fetch: from Expo SDK 52+ the global fetch is `expo/fetch`, which rejects
+ * React Native-style file parts ({ uri, name, type }) with
+ * "Unsupported FormDataPart implementation". RN's XMLHttpRequest still uploads
+ * local files from their `file://` URI, so it is used for the image upload.
+ */
+function postMultipart(url: string, body: FormData, timeoutMs: number): Promise<UploadOutcome> {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.timeout = timeoutMs;
+    xhr.setRequestHeader("Accept", "application/json");
+    xhr.onload = () => resolve({ kind: "response", status: xhr.status, body: xhr.responseText ?? "" });
+    xhr.onerror = () => resolve({ kind: "network", message: "XMLHttpRequest network error" });
+    xhr.ontimeout = () => resolve({ kind: "timeout" });
+    // Content-Type (with the multipart boundary) is set by the runtime - do not set it here.
+    xhr.send(body);
+  });
+}
+
 /** Reads FastAPI's {"detail": "..."} error message, if present. */
-async function readErrorDetail(response: Response): Promise<string | null> {
+function readErrorDetail(body: string): string | null {
   try {
-    const body = (await response.json()) as { detail?: unknown };
-    return typeof body?.detail === "string" && body.detail.trim() ? body.detail.trim() : null;
+    const parsed = JSON.parse(body) as { detail?: unknown };
+    return typeof parsed?.detail === "string" && parsed.detail.trim() ? parsed.detail.trim() : null;
   } catch {
     return null;
   }
-}
-
-function wait(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function requestPrediction(
@@ -137,73 +164,60 @@ async function requestPrediction(
   } as unknown as Blob;
   formData.append("image", imagePart);
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
+  const outcome = await postMultipart(PREDICTION_ENDPOINT, formData, TIMEOUT);
 
-  try {
-    let response: Response;
-    try {
-      response = await fetch(PREDICTION_ENDPOINT, {
-        method: "POST",
-        body: formData,
-        signal: controller.signal,
-      });
-    } catch (error) {
-      // Visible in the Expo terminal - helps diagnose network problems.
-      console.warn(
-        `[prediction] POST ${PREDICTION_ENDPOINT} failed:`,
-        error instanceof Error ? `${error.name}: ${error.message}` : String(error),
-        { uri: image.uri, name: file.name, type: file.type },
-      );
-      if (controller.signal.aborted) {
-        throw new Error("The analysis took too long. Please try again when your connection is stable.");
-      }
-      throw new Error(
-        `We could not reach the prediction service at ${PREDICTION_ENDPOINT}. Check your connection and try again.`,
-      );
+  if (outcome.kind !== "response") {
+    // Visible in the Expo terminal - helps diagnose network problems.
+    console.warn(
+      `[prediction] POST ${PREDICTION_ENDPOINT} failed:`,
+      outcome.kind === "timeout" ? "timeout" : outcome.message,
+      { uri: image.uri, name: file.name, type: file.type },
+    );
+    if (outcome.kind === "timeout") {
+      throw new Error("The analysis took too long. Please try again when your connection is stable.");
     }
-
-    if (!response.ok) {
-      const detail = await readErrorDetail(response);
-      if (response.status === 404) {
-        throw new Error("The prediction service endpoint is not available yet. Please try again later.");
-      }
-      if (response.status === 503) {
-        throw new Error("The diagnosis model is not ready on the server yet. Please try again shortly.");
-      }
-      if (response.status >= 500) {
-        throw new Error("The prediction service is temporarily unavailable. Please try again later.");
-      }
-      if (response.status === 413) {
-        throw new Error("This photo is too large. Please choose a smaller image.");
-      }
-      // 400 / 415: the server explains what is wrong with the photo.
-      throw new Error(detail ?? "The photo could not be analyzed. Please check it and try again.");
-    }
-
-    let payload: PredictionApiResponse;
-    try {
-      payload = await response.json() as PredictionApiResponse;
-    } catch {
-      if (controller.signal.aborted) {
-        throw new Error("The analysis took too long. Please try again when your connection is stable.");
-      }
-      throw new Error("The prediction service sent an unreadable response. Please try again.");
-    }
-
-    if (!payload || typeof payload !== "object") {
-      throw new Error("The prediction service sent an invalid result. Please try again.");
-    }
-
-    return normalizeApiResponse(payload);
-  } finally {
-    clearTimeout(timeoutId);
+    throw new Error(
+      `We could not reach the prediction service at ${PREDICTION_ENDPOINT}. Check your connection and try again.`,
+    );
   }
+
+  const { status, body } = outcome;
+  if (status < 200 || status >= 300) {
+    const detail = readErrorDetail(body);
+    console.warn(`[prediction] POST ${PREDICTION_ENDPOINT} returned ${status}:`, detail ?? body.slice(0, 200));
+    if (status === 404) {
+      throw new Error("The prediction service endpoint is not available yet. Please try again later.");
+    }
+    if (status === 503) {
+      throw new Error("The diagnosis model is not ready on the server yet. Please try again shortly.");
+    }
+    if (status >= 500 || status === 0) {
+      throw new Error("The prediction service is temporarily unavailable. Please try again later.");
+    }
+    if (status === 413) {
+      throw new Error("This photo is too large. Please choose a smaller image.");
+    }
+    // 400 / 415: the server explains what is wrong with the photo.
+    throw new Error(detail ?? "The photo could not be analyzed. Please check it and try again.");
+  }
+
+  let payload: PredictionApiResponse;
+  try {
+    payload = JSON.parse(body) as PredictionApiResponse;
+  } catch {
+    throw new Error("The prediction service sent an unreadable response. Please try again.");
+  }
+
+  if (!payload || typeof payload !== "object") {
+    throw new Error("The prediction service sent an invalid result. Please try again.");
+  }
+
+  return normalizeApiResponse(payload);
 }
 
 /**
  * Validates a selected leaf image and produces a mock result or API prediction.
- * Multipart boundaries are deliberately left to the fetch runtime.
+ * Multipart boundaries are deliberately left to the networking runtime.
  */
 export async function analyzeImage(image: SelectedImage): Promise<PredictionResult> {
   const file = getImageFile(image);
