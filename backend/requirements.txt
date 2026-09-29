@@ -1,9 +1,20 @@
-fastapi
-uvicorn[standard]
-pymongo[srv]
-pydantic[email]
-pydantic-settings
-python-dotenv
-bcrypt
-pyjwt
-python-multipart
+# Web framework
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+
+# Settings / validation
+pydantic[email]>=2.7
+pydantic-settings>=2.3
+python-dotenv>=1.0
+
+# Database + auth
+pymongo>=4.8
+dnspython>=2.6
+bcrypt>=4.1
+pyjwt>=2.8
+
+# Inference (LiteRT runs the .tflite model; ~18 MB, has Windows wheels)
+ai-edge-litert>=2.0
+numpy>=1.26
+pillow>=10.3
