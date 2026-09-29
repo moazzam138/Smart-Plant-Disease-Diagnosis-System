@@ -25,12 +25,13 @@ ERROR_RESPONSES = {
 }
 
 
-async def _read_upload(image: Optional[UploadFile]) -> bytes:
-    if image is None:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "No image uploaded. Send the photo as multipart/form-data in a field named 'image'.",
-        )
+MISSING_IMAGE_MESSAGE = (
+    "No image uploaded. Send the photo as multipart/form-data in a field named 'image'."
+)
+PREDICT_PATHS = {"/predict", "/api/predictions/analyze"}
+
+
+async def _read_upload(image: UploadFile) -> bytes:
     ctype = (image.content_type or "").lower().split(";")[0].strip()
     if ctype and ctype not in ALLOWED_CONTENT_TYPES and ctype != "application/octet-stream":
         raise HTTPException(
@@ -74,7 +75,7 @@ def _save(result: dict, image_name: Optional[str], user: Optional[dict]) -> Opti
         return None
 
 
-async def _predict(image: Optional[UploadFile], user: Optional[dict]) -> dict:
+async def _predict(image: UploadFile, user: Optional[dict]) -> dict:
     data = await _read_upload(image)
     try:
         result = await run_in_threadpool(model_service.predict_bytes, data)
@@ -108,7 +109,7 @@ async def _predict(image: Optional[UploadFile], user: Optional[dict]) -> dict:
     summary="Diagnose one tomato leaf image",
 )
 async def predict(
-    image: Optional[UploadFile] = File(None, description="Leaf photo (JPG, PNG or WebP)"),
+    image: UploadFile = File(..., description="Leaf photo (JPG, PNG or WebP)"),
     user: Optional[dict] = Depends(get_optional_user),
 ):
     """Upload one image as multipart/form-data in the field **image**.
@@ -120,7 +121,7 @@ async def predict(
 # has not pulled the latest config still works. Not shown in /docs.
 @router.post("/api/predictions/analyze", response_model=PredictionResponse, include_in_schema=False)
 async def predict_legacy(
-    image: Optional[UploadFile] = File(None),
+    image: UploadFile = File(...),
     user: Optional[dict] = Depends(get_optional_user),
 ):
     return await _predict(image, user)

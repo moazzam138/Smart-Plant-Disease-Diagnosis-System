@@ -6,13 +6,17 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app import database
 from app.config import settings
 from app.data.diseases import DISEASES
 from app.routers import auth, diseases, health, predict, predictions
+from app.routers.predict import MISSING_IMAGE_MESSAGE, PREDICT_PATHS
 from app.routers.health import VERSION
 from app.services.model_service import model_service
 
@@ -56,6 +60,17 @@ app = FastAPI(
     ),
     lifespan=lifespan,
 )
+
+@app.exception_handler(RequestValidationError)
+async def validation_handler(request: Request, exc: RequestValidationError):
+    """/predict: a missing or non-file 'image' field is a plain 400 with one clear
+    message (what the mobile app shows). Everything else keeps FastAPI's 422."""
+    if request.url.path in PREDICT_PATHS and any(
+        "image" in (err.get("loc") or ()) for err in exc.errors()
+    ):
+        return JSONResponse(status_code=400, content={"detail": MISSING_IMAGE_MESSAGE})
+    return await request_validation_exception_handler(request, exc)
+
 
 origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
 app.add_middleware(

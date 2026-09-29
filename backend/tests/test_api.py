@@ -67,6 +67,23 @@ def test_missing_image_is_400(client):
     assert "image" in r.json()["detail"]
 
 
+def test_swagger_empty_value_is_400(client):
+    # What /docs sends when Execute is clicked without choosing a file
+    r = client.post("/predict", data={"image": ""})
+    assert r.status_code == 400
+    assert "image" in r.json()["detail"]
+
+
+def test_other_validation_errors_stay_422(client):
+    assert client.post("/auth/register", json={"email": "not-an-email", "password": "secret123"}).status_code == 422
+
+
+def test_image_field_is_required_file_in_docs(client):
+    body = client.get("/openapi.json").json()["components"]["schemas"]["Body_predict_predict_post"]
+    assert body["required"] == ["image"]
+    assert "anyOf" not in body["properties"]["image"]  # plain file -> Swagger shows a file picker
+
+
 def test_wrong_field_name_is_400(client):
     r = client.post("/predict", files={"file": ("leaf.png", make_image(), "image/png")})
     assert r.status_code == 400

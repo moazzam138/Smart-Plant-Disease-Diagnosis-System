@@ -158,7 +158,7 @@ pip install -r requirements-dev.txt
 python -m pytest -v
 ```
 
-25 tests cover the contract, validation (400/413/415), running without MongoDB, a missing model (503), register/login/JWT, per-user history, and the label mapping. They use a tiny bundled model and an in-memory database, so they need neither the real model nor Atlas.
+28 tests cover the contract, validation (400/413/415), running without MongoDB, a missing model (503), register/login/JWT, per-user history, and the label mapping. They use a tiny bundled model and an in-memory database, so they need neither the real model nor Atlas.
 
 ---
 
