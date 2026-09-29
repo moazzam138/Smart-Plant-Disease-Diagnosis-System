@@ -1,0 +1,11 @@
+unified_class_name,plantvillage_class,plantdoc_class,tomato_village_class,keep_class,notes
+bacterial_spot,Tomato___Bacterial_spot,Tomato leaf bacterial spot,,yes,PlantVillage lab representation plus PlantDoc field representation
+early_blight,Tomato___Early_blight,Tomato Early blight leaf,Early_blight,yes,Represented across all three datasets
+late_blight,Tomato___Late_blight,Tomato leaf late blight,Late_blight,yes,Represented across all three datasets
+leaf_mold,Tomato___Leaf_Mold,Tomato mold leaf,,yes,PlantVillage lab representation plus PlantDoc field representation
+septoria_leaf_spot,Tomato___Septoria_leaf_spot,Tomato Septoria leaf spot,,yes,PlantVillage lab representation plus PlantDoc field representation
+spider_mites,Tomato___Spider_mites Two-spotted_spider_mite,Tomato two spotted spider mites leaf,,yes,Only 2 PlantDoc field images; no Tomato-Village representation
+healthy,Tomato___healthy,,Healthy,yes,PlantVillage lab representation plus Tomato-Village field representation; PlantDoc Tomato leaf is not mapped to healthy
+tomato_mosaic_virus,Tomato___Tomato_mosaic_virus,Tomato leaf mosaic virus,,yes,PlantVillage lab representation plus PlantDoc field representation
+yellow_leaf_curl_virus,Tomato___Tomato_Yellow_Leaf_Curl_Virus,Tomato leaf yellow virus,,yes,PlantVillage lab representation plus PlantDoc field representation
+target_spot,Tomato___Target_Spot,,,no,No corresponding field-domain class in PlantDoc or Tomato-Village
