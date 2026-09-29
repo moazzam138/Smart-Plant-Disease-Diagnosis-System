@@ -149,10 +149,18 @@ async function requestPrediction(
         signal: controller.signal,
       });
     } catch (error) {
+      // Visible in the Expo terminal - helps diagnose network problems.
+      console.warn(
+        `[prediction] POST ${PREDICTION_ENDPOINT} failed:`,
+        error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+        { uri: image.uri, name: file.name, type: file.type },
+      );
       if (controller.signal.aborted) {
         throw new Error("The analysis took too long. Please try again when your connection is stable.");
       }
-      throw new Error("We could not reach the prediction service. Check your connection and try again.");
+      throw new Error(
+        `We could not reach the prediction service at ${PREDICTION_ENDPOINT}. Check your connection and try again.`,
+      );
     }
 
     if (!response.ok) {
@@ -199,6 +207,7 @@ async function requestPrediction(
  */
 export async function analyzeImage(image: SelectedImage): Promise<PredictionResult> {
   const file = getImageFile(image);
+  console.log(`[prediction] mode=${MODE} endpoint=${PREDICTION_ENDPOINT}`);
 
   if (MODE === "mock") {
     await wait(650);
