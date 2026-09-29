@@ -84,8 +84,14 @@ function normalizeApiResponse(payload: PredictionApiResponse): PredictionResult 
     throw new Error("The prediction service returned an incomplete result. Please try again.");
   }
 
+  const label = response.disease.trim();
+  const displayName = typeof response.display_name === "string" && response.display_name.trim()
+    ? response.display_name.trim()
+    : label;
+
   return {
-    disease: response.disease.trim(),
+    disease: displayName,
+    label,
     confidence: normalizeConfidence(response.confidence),
     severity: normalizeSeverity(response.severity),
     model: typeof response.model === "string" && response.model.trim()
@@ -103,6 +109,16 @@ function createMockPrediction(): PredictionResult {
     model: "Mock Model",
     source: "mock",
   };
+}
+
+/** Reads FastAPI's {"detail": "..."} error message, if present. */
+async function readErrorDetail(response: Response): Promise<string | null> {
+  try {
+    const body = (await response.json()) as { detail?: unknown };
+    return typeof body?.detail === "string" && body.detail.trim() ? body.detail.trim() : null;
+  } catch {
+    return null;
+  }
 }
 
 function wait(milliseconds: number): Promise<void> {
@@ -140,13 +156,21 @@ async function requestPrediction(
     }
 
     if (!response.ok) {
+      const detail = await readErrorDetail(response);
       if (response.status === 404) {
         throw new Error("The prediction service endpoint is not available yet. Please try again later.");
+      }
+      if (response.status === 503) {
+        throw new Error("The diagnosis model is not ready on the server yet. Please try again shortly.");
       }
       if (response.status >= 500) {
         throw new Error("The prediction service is temporarily unavailable. Please try again later.");
       }
-      throw new Error("The photo could not be analyzed. Please check it and try again.");
+      if (response.status === 413) {
+        throw new Error("This photo is too large. Please choose a smaller image.");
+      }
+      // 400 / 415: the server explains what is wrong with the photo.
+      throw new Error(detail ?? "The photo could not be analyzed. Please check it and try again.");
     }
 
     let payload: PredictionApiResponse;

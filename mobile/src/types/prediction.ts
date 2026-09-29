@@ -4,7 +4,10 @@ export type PredictionSource = "mock" | "api";
 
 /** Confidence is normalized to a percentage from 0 through 100. */
 export interface PredictionResult {
+  /** Readable disease name shown to the user, e.g. "Late Blight". */
   disease: string;
+  /** Raw ML class label from the backend, e.g. "Tomato___Late_blight" (API results only). */
+  label?: string;
   confidence: number;
   severity: DiseaseSeverity;
   model: string;
@@ -20,14 +23,19 @@ export interface SavedPrediction extends PredictionResult {
 
 export type NewSavedPrediction = Omit<SavedPrediction, "id" | "createdAt">;
 
-/** Expected JSON shape returned by the prediction API. */
+/**
+ * JSON returned by POST /predict (see backend README "Prediction contract").
+ * `disease` is the raw ML label; `display_name` is the readable name.
+ */
 export interface PredictionApiResponse {
   disease?: unknown;
+  display_name?: unknown;
   confidence?: unknown;
   severity?: unknown;
   model?: unknown;
   data?: {
     disease?: unknown;
+    display_name?: unknown;
     confidence?: unknown;
     severity?: unknown;
     model?: unknown;
